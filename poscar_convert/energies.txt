@@ -1,0 +1,6 @@
+/Users/sdutta/workspace/npl/models/config_gen/AllPOSCAR/Tilting/Rotation45/Move3.090/z-0.150/config.lmp 78822.4190491691
+/Users/sdutta/workspace/npl/models/config_gen/AllPOSCAR/Tilting/Rotation45/Move3.090/z-0.150/config.lmp 78822.4190491691
+/Users/sdutta/workspace/npl/models/config_gen/AllPOSCAR/Tilting/Rotation45/Move3.090/z-0.150/config.lmp 78821.8803825472
+/Users/sdutta/workspace/npl/models/config_gen/AllPOSCAR/Tilting/Rotation45/Move3.090/z-0.150/config.lmp 78822.4190491691
+/Users/sdutta/workspace/npl/models/config_gen/AllPOSCAR/Tilting/Rotation45/Move3.090/z-0.150/config.lmp 71753.0366030604
+/Users/sdutta/workspace/npl/models/config_gen/AllPOSCAR/Tilting/Rotation45/Move3.090/z-0.150/config.lmp 65848.3233892228

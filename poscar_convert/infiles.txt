@@ -1,0 +1,2 @@
+/Users/sdutta/workspace/npl/models/config_gen/AllPOSCAR/Tilting/Rotation45/Move3.090/z-0.150/config.lmp
+#/Users/sdutta/workspace/npl/models/config_gen/AllPOSCAR/Tilting/Rotation45/Move3.090/z0.100/config.lmp
