@@ -692,9 +692,9 @@ def add_molecules(config, molecules, packmol_tol=2.0, packmol_sidemax=1.0e3,
             fns_xyz.append(fn_xyz)
             write_xyz(moltem, fn_xyz)
             fh.write('structure %s\n'%fn_xyz)
-            fh.write('    number %d\n'%each['num'])
+            fh.write('  number %d\n'%each['num'])
             for constraint in each['constraints']:
-                fh.write('    %s\n'%constraint)
+                fh.write('  %s\n'%constraint)
             fh.write('end structure\n')
     
     #Run packmol

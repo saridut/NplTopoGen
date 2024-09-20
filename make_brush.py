@@ -49,9 +49,10 @@ solvent_exclude = (0, 10)
 brush = Brush(lx, lz)
 
 #Ligands
-brush.add_ligands(ligands, ligand_pop_ratio, gdens, teth_dist, 'bcc',
-    packmol_path=None)
-print(f"Brush density = {brush.gdens}/angstrom^2")
+#brush.add_ligands(ligands, ligand_pop_ratio, gdens, teth_dist, 'bcc',
+#    packmol_path=None)
+brush.add_ligand_one(ligands[0], teth_dist)
+print(f"Brush density = {brush.gdens: f}/angstrom^2")
  
 #brush.apply_pbc(directions='xy', add_img_flag=True)
 #brush.tweak_cvff_impropers()
@@ -92,8 +93,9 @@ brush.add_piston('top', pa_lpar, pa_thickness, pa_mass,
 
 brush.apply_pbc(directions='xy', add_img_flag=True)
 
-brush.gen_ff_pair(fn=f"slv_{tag}_pcoeff.lmp", soften=None)
 #brush.write_bond_coeffs(fn=f"slv_{tag}_sbcoeff.lmp", kbond=6.0e7)
+
+brush.gen_ff_pair(fn=f"slv_{tag}_pcoeff.lmp", soften=None)
 brush.gen_ff_pair(fn=f"slv_{tag}_pcoeff_soft.lmp", soften='both')
 brush.write(f"slv_{tag}.lmp", title=f"slv_{tag}", fn_mg=f"slv_{tag}_mg.txt",
           with_pc=False)

@@ -89,11 +89,11 @@ class Brush(Configuration):
             lpar = self.lx/(n/2)**0.5
 
         #Graft points
-        lo = [-self.lx/2, -self.lx/2, 0.0]
-        hi = [ self.lx/2,  self.lx/2, 0.0]
+        lo = [-self.lx/2, -self.lx/2, teth_dist]
+        hi = [ self.lx/2,  self.lx/2, teth_dist]
         graft_points = get_lattice_points(lattice, lpar, lo, hi, 'ppp')
-        #for each in graft_points:
-        #    each[2] += abs( rng.normal(0.0, 1.0) )
+        for each in graft_points:
+            each[2] += abs( rng.normal(0.0, 1.0) )
         n = len(graft_points)
 
         den = ligand_pop_ratio.sum()
@@ -182,22 +182,22 @@ class Brush(Configuration):
 
         #Graft ligands
         #Adding grafting point atoms
-        aid_beg = self.num_atoms + 1
-        aid_end = aid_beg + len(graft_points) - 1
-        iat = self.add_atom_type(mass=1.0, name='GP')
-        eps = 0.0; sigma = 1.0
-        self.set_pair_coeff(iat, [eps, sigma])
-        at_beg = iat; at_end = iat
+        #~aid_beg = self.num_atoms + 1
+        #~aid_end = aid_beg + len(graft_points) - 1
+        #~iat = self.add_atom_type(mass=1.0, name='GP')
+        #~eps = 0.0; sigma = 1.0
+        #~self.set_pair_coeff(iat, [eps, sigma])
+        #~at_beg = iat; at_end = iat
 
-        for each in graft_points:
-            self.add_atom(iat, 0.0, each)
+        #~for each in graft_points:
+        #~    self.add_atom(iat, 0.0, each)
 
-        atoms = range(aid_beg, aid_end+1)
-        atom_types = range(at_beg, at_end+1)
-        self.set_group('GraftPoints', atom_types=atom_types, atoms=atoms)
+        #~atoms = range(aid_beg, aid_end+1)
+        #~atom_types = range(at_beg, at_end+1)
+        #~self.set_group('GraftPoints', atom_types=atom_types, atoms=atoms)
 
         #Adding bond type: graft points -- ligand heads
-        bt_gp = self.add_bond_type(params=[60.0, teth_dist])
+        #~bt_gp = self.add_bond_type(params=[60.0, teth_dist])
 
         #Grafting ligands
         zhat = np.array([0,0,1])
@@ -219,15 +219,84 @@ class Brush(Configuration):
             #~zmin = coords[:,2].min()
             #~dz = 2.0 - zmin #wall cutoff = 2.0 (move wall below)
             #~coords[:,2] += dz
-            #~self.set_atom_coords(range(atm_beg, atm_end+1), coords)
-            #Move ligands upwards to bring head to eql dist from graft point
-            coords[:,2] += teth_dist
             self.set_atom_coords(range(atm_beg, atm_end+1), coords)
+            #Move ligands upwards to bring head to eql dist from graft point
+            #~coords[:,2] += teth_dist
+            #~self.set_atom_coords(range(atm_beg, atm_end+1), coords)
 
-            atm_i = self.groups['GraftPoints']['atoms'][k]
-            atm_j = atm_beg + moltem.head - 1
-            self.add_bond(bt_gp, atm_i, atm_j)
+            #~atm_i = self.groups['GraftPoints']['atoms'][k]
+            #~atm_j = atm_beg + moltem.head - 1
+            #~self.add_bond(bt_gp, atm_i, atm_j)
 
+
+
+
+    def add_ligand_one(self, ligand, teth_dist):
+        """
+        Adds a single ligand molecule at the center of the tethering plane.
+
+        Parameters
+        ----------
+
+        ligand : LigandMolecule
+            Ligand molecule to add.
+        teth_dist : float
+            Distance along the z-axis from the bottom of the box to the
+            ligand head atoms (the C1 atom).
+        packmol_tol : float
+            Tolerance for Packmol. Default is 2 angstrom.
+        packmol_sidemax : float
+            Parameter for Packmol. Default is 1000 angstrom.
+        packmol_path : str or pathlib.Path
+            Path to Packmol binary.
+
+        """
+        rng = np.random.default_rng()
+
+        #Graft points
+        graft_point = np.array([0,0,teth_dist])
+        self.gdens = 1/self.lx**2
+
+        aid_beg = self.num_atoms + 1 # First ligand atom id
+        aid_end = aid_beg + ligand.num_atoms - 1 # Last ligand atom id
+        mid_beg = self.num_molecules + 1 #First ligand molecule id
+        mid_end = mid_beg  # Last ligand molecule id
+
+        na_ligands = aid_end - aid_beg + 1
+        print('  Total number of ligand molecules = 1') 
+        print('  Total number of ligand atoms = %d'%na_ligands)
+
+        #Offsets in types
+        num_types = np.array([self.num_atom_types, self.num_bond_types,
+                        self.num_angle_types, self.num_dihedral_types,
+                        self.num_improper_types], dtype=np.int32)
+        type_offsets = tuple(num_types)
+        at_beg = self.num_atom_types + 1
+        at_end = at_beg + ligand.num_atom_types - 1
+
+        #Add ligands
+        ligands_to_add = [{'moltem': ligand, 'num': 1, 'offsets': type_offsets}]
+        add_molecules(self, ligands_to_add, packmol_path=None)
+
+        #Create new group of ligand atoms
+        atoms = range(aid_beg, aid_end+1)
+        atom_types = range(at_beg, at_end+1)
+        molecules = range(mid_beg, mid_end+1)
+        self.set_group('ligands', atoms=atoms, atom_types=atom_types,
+                       molecules=molecules)
+
+        #Grafting ligands
+        zhat = np.array([0,0,1])
+        angle = 2*math.pi*rng.random()
+        p = ligand.get_atom_coords([ligand.head])
+        ligand.rotate(angle, zhat, p[0:])
+        ligand.translate_atom(ligand.head, graft_point)
+
+        mol_id = self.groups['ligands']['molecules'][0]
+        atm_beg = self.molecules[mol_id]['atm_beg']
+        atm_end = self.molecules[mol_id]['atm_end']
+        coords = ligand.get_atom_coords()
+        self.set_atom_coords(range(atm_beg, atm_end+1), coords)
 
 
 
