@@ -32,18 +32,19 @@ class Configuration(object):
         self.num_angle_types = 0
         self.num_dihedral_types = 0
         self.num_improper_types = 0
+        self.num_molecule_types = 0
 
         self.num_atoms = 0
         self.num_bonds = 0
         self.num_angles = 0
         self.num_dihedrals = 0
         self.num_impropers = 0
-
-        self.num_groups = 0
         self.num_molecules = 0
+        self.num_groups = 0
 
         self.atom_mass = {}
         self.atom_names = {}
+        self.molecule_types = {}
 
         self.pair_coeffs = {}
         self.bond_coeffs = {}
@@ -73,18 +74,19 @@ class Configuration(object):
         self.num_angle_types = 0
         self.num_dihedral_types = 0
         self.num_improper_types = 0
+        self.num_molecule_types = 0
 
         self.num_atoms = 0
         self.num_bonds = 0
         self.num_angles = 0
         self.num_dihedrals = 0
         self.num_impropers = 0
-
-        self.num_groups = 0
         self.num_molecules = 0
+        self.num_groups = 0
 
         self.atom_mass.clear()
         self.atom_names.clear()
+        self.molecule_types.clear()
 
         self.pair_coeffs.clear()
         self.bond_coeffs.clear()
@@ -152,6 +154,17 @@ class Configuration(object):
         assert iat >= 1 and iat <= self.num_atom_types
         assert mass > 0
         self.atom_mass[iat] = mass
+
+
+    def add_molecule_type(self, molecule):
+        '''
+        Adds a new molecule type `imt`.  Returns the name of the molecule added.
+
+        '''
+        self.num_molecule_types += 1
+        name = molecule.name
+        self.molecule_types[name] = copy.deepcopy(molecule)
+        return name
 
 
     def add_bond_type(self, params=None):
@@ -325,7 +338,7 @@ class Configuration(object):
             aid = aids[i]
             coords[i,:] = np.copy(self.atoms[aid]['coords'])
         if out is None:
-            return coords
+            return np.squeeze(coords)
 
 
     def add_velocity(self, atm_id, vel):
@@ -600,6 +613,24 @@ class Configuration(object):
             coords_i[:] = coords_j + dr
 
 
+    def get_bbox(self, atm_ids=None):
+        '''
+        Returns an axis-aligned bounding box around a set of atoms.
+
+        '''
+        if atm_ids is None:
+            n = self.num_atoms; aids = range(1, n+1)
+        else:
+            n = len(atm_ids); aids = atm_ids
+        rlo = np.array([np.inf, np.inf, np.inf])
+        rhi = np.array([np.NINF, np.NINF, np.NINF])
+        for iatm in aids:
+            coords = self.atoms[iatm]['coords']
+            rlo = np.minimum(rlo, coords)
+            rhi = np.maximum(rhi, coords)
+        return (rlo, rhi)
+
+
     def fit_simbox(self, sep=0.0):
         '''
         Changes the simulation box dimensions to the extent of the atom
@@ -611,13 +642,7 @@ class Configuration(object):
         box size, e.g. for single molecules in unbounded domain.
 
         '''
-        rlo = np.array([np.inf, np.inf, np.inf])
-        rhi = np.array([np.NINF, np.NINF, np.NINF])
-
-        for iatm in range(1, len(self.atoms)+1):
-            coords = self.atoms[iatm]['coords']
-            rlo = np.minimum(rlo, coords)
-            rhi = np.maximum(rhi, coords)
+        rlo, rhi = self.get_bbox()
         #Update box dimensions
         self.simbox[:,0] = rlo - sep
         self.simbox[:,1] = rhi + sep

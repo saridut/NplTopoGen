@@ -6,7 +6,7 @@ from molecule import LigandMolecule
 #Ligands
 Acetate = LigandMolecule('Acetate', 
             'ligands/carboxy_acid/C2/C2_anion.lmp',
-            head=2, tail=1, bind_group=[2,3,4])
+            head=1, tail=2, bind_group=[1,3,4])
 Butanoate = LigandMolecule('Butanoate', 
                 'ligands/carboxy_acid/C4/C4_anion.lmp',
                 head=4, tail=1, bind_group=[4,5,6])
@@ -34,6 +34,12 @@ Octadecanoate = LigandMolecule('Octadecanoate',
 Icosanoate = LigandMolecule('Icosanoate',
                 'ligands/carboxy_acid/C20/C20_anion.lmp', 
                 head=20, tail=1, bind_group=[20,21,22])
+Tetracosanoate = LigandMolecule('Tetracosanoate',
+                'ligands/carboxy_acid/C24/C24_anion.lmp', 
+                head=24, tail=1, bind_group=[24,25,26])
+Triacontanoate = LigandMolecule('Triacontanoate',
+                'ligands/carboxy_acid/C30/C30_anion.lmp', 
+                head=30, tail=1, bind_group=[30,31,32])
 Oleate = LigandMolecule('Oleate', 
                 'ligands/carboxy_acid/C18_usat/C18_usat_anion.lmp',
                 head=18, tail=1, bind_group=[18,19,20])

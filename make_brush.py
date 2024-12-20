@@ -1,105 +1,80 @@
 #!/usr/bin/env python
 
+import sys
 import math
 import numpy as np
 from molecule import LigandMolecule
 from brush import Brush
 from solvents import Hexane, Toluene, Mch, OleicAcid
-#from crystal import get_lattice_points
-
-#coords = get_lattice_points('sc', [1.5, 1.5, 1.0], [-2,-2,0], [2,2,0], 'ncn')
-
-#for i,each in enumerate(coords):
-#    print(i, each)
-#
-#raise SystemExit()
 
 packmol_path='~/soft/packmol/packmol'
-#packmol_path='~/soft/packmol-20.15.0/packmol'
 
-#Here the bind_group indicates the local atom ids that are bound to the head.
-#These atoms must be below the wall.
-oa = LigandMolecule('OA', 'ligands/carboxy_acid/C18_usat/C18_usat_acid.lmp',
-        head=18, tail=1, bind_group=[19,20,54])
-oa.translate_atom(oa.head, np.zeros((3,)))
-oa.align(18, 1, np.array([0,0,1]))
-oa.fit_simbox()
-r = oa.get_gyration_radius(atoms=oa.bind_group)[0]
+lig_cx = LigandMolecule('C18', 'ligands/carboxy_acid/C18/C18.lmp',
+        head=19, tail=18, bind_group=[19])
 
-#d = 4.0 #2*(r+1.5)
-#rcut = 2.0
-#sigma = 2**(-1/6)*(rcut)
-#print(f"sigma = {sigma}, rcut = {rcut}, d = {d}")
-#oa.write('oa.lmp')
-#raise SystemExit()
+xa_mass = 12.011
+xa_eps = 0.25
+xa_rcut = 2.0
+xa_sigma = 2**(-1/6)*xa_rcut
+xlpar = xa_sigma*2/math.sqrt(2.0) #Lattice parameter for wall atoms (fcc lattice)
 
+xtal_lx = 100
+xtal_ly = 100
+xtal_lz = 12
+box_params = {'sepz': 90}
+apl = int(sys.argv[1]) #Area per ligand in ang^2
 
-tag = 'brush_6x6_oa'
-gdens = 0.03 #Grafting density, in #/ang^2
-lx = 60     #ly = lx
-lz = 100 #75
+dn = f"C18-hexane/apl_{apl}"
 
-teth_dist = 5.0 #d
-ligands = [oa]
+ligands = [lig_cx]
 ligand_pop_ratio = np.array([1])
-
 solvent = Hexane #Toluene
-solvent_exclude = (0, 10)
+tag = f"brush_C18_apl_{apl:g}_Hexane"
     
-brush = Brush(lx, lz)
+brush = Brush(is_slab=True, slab_pos='mid')
 
-#Ligands
-#brush.add_ligands(ligands, ligand_pop_ratio, gdens, teth_dist, 'bcc',
-#    packmol_path=None)
-brush.add_ligand_one(ligands[0], teth_dist)
-print(f"Brush density = {brush.gdens: f}/angstrom^2")
- 
-#brush.apply_pbc(directions='xy', add_img_flag=True)
+#Add crystal
+brush.add_xtal(xtal_lx, xtal_ly, xtal_lz, xlpar, xa_mass, xa_eps, xa_sigma,
+               xa_rcut, out_dir=dn)
+
+#Add ligands
+brush.add_ligands(ligands, ligand_pop_ratio, r0=xa_rcut, balance_charge=False,
+                  lattice='bcc', apl=apl, out_dir=dn)
+#
 #brush.tweak_cvff_impropers()
 #brush.adjust_charge()
-
-#brush.write(f"{tag}.lmp", title=f"{tag}", fn_mg=f"{tag}_mg.txt",
-#          with_pc=False)
-#brush.gen_ff_pair(fn=f"{tag}_pcoeff.lmp", soften=None)
-#brush.gen_ff_pair(fn=f"{tag}_pcoeff_soft.lmp", soften='ligands')
-#raise SystemExit()
-
-#Solvent
-brush.solvate(solvent, solvent_exclude, packmol_tol=2.1,
-              packmol_sidemax=1.0e3, packmol_path=packmol_path)
-
-brush.tweak_cvff_impropers()
-brush.adjust_charge()
 #brush.apply_pbc(directions='xy', add_img_flag=True)
 
-#brush.write(f"slv_{tag}.lmp", title=f"slv_{tag}", fn_mg=f"slv_{tag}_mg.txt",
-#          with_pc=False)
+brush.write(f"{dn}/{tag}.lmp", title=f"{tag}", fn_mg='', with_pc=False)
+#brush.gen_ff_pair(fn=f"{tag}_pcoeff.lmp", soften=None)
+#brush.gen_ff_pair(fn=f"{tag}_pcoeff_soft.lmp", soften='ligands')
+
+#Solvent
+brush.solvate(solvent, box_params, packmol_tol=2.0, packmol_sidemax=1.0e3,
+              packmol_path=packmol_path)
+#brush.simbox[2,1] += 1; brush.simbox[2,0] = -brush.simbox[2,1]
+brush.tweak_cvff_impropers()
+brush.adjust_charge()
+#brush.apply_pbc(directions='xyz', add_img_flag=True)
 
 #brush.gen_ff_pair(fn=f"slv_{tag}_pcoeff.lmp", soften=None)
 #brush.gen_ff_pair(fn=f"slv_{tag}_pcoeff_soft.lmp", soften='both')
-
-#brush.gen_ff_pair(fn=f"slv_{tag}_pcoeff_soft_lig.lmp", soften='ligands')
-#brush.gen_ff_pair(fn=f"slv_{tag}_pcoeff_soft_sol.lmp", soften='solvent')
+#brush.write(f"slv_{tag}.lmp", title=f"slv_{tag}", fn_mg=f"slv_{tag}_mg.txt",
+#         with_pc=False)
 
 #Piston
-pa_eps = 5.29 #0.2384
+pa_eps = 5.29
 pa_sigma = 2.629
-pa_rcut = None
+pa_rcut = 12.0
 pa_lpar = 4.0778
 pa_mass = 196.967
 pa_thickness = 3*pa_lpar
-brush.add_piston('top', pa_lpar, pa_thickness, pa_mass,
-                pa_eps, pa_sigma, pa_rcut)
+brush.add_piston('both', pa_lpar, pa_thickness, pa_mass,
+                pa_eps, pa_sigma, pa_rcut, out_dir=dn)
 
 brush.apply_pbc(directions='xy', add_img_flag=True)
 
-#brush.write_bond_coeffs(fn=f"slv_{tag}_sbcoeff.lmp", kbond=6.0e7)
-
-brush.gen_ff_pair(fn=f"slv_{tag}_pcoeff.lmp", soften=None)
-brush.gen_ff_pair(fn=f"slv_{tag}_pcoeff_soft.lmp", soften='both')
-brush.write(f"slv_{tag}.lmp", title=f"slv_{tag}", fn_mg=f"slv_{tag}_mg.txt",
+brush.gen_ff_pair(fn=f"{dn}/slv_{tag}_pcoeff.lmp", soften=None)
+brush.gen_ff_pair(fn=f"{dn}/slv_{tag}_pcoeff_soft.lmp", soften='both')
+brush.write(f"{dn}/slv_{tag}.lmp", title=f"slv_{tag}", fn_mg=f"{dn}/slv_{tag}_mg.txt",
           with_pc=False)
- 
-#raise SystemExit()
-
-

@@ -5,6 +5,7 @@ import warnings
 import subprocess
 from pathlib import Path
 import numpy as np
+import pprint
 #from _geom_utils import *
 
 #-------------------------------------------------------------------------------
@@ -554,12 +555,19 @@ def add_molecules(config, molecules, packmol_tol=2.0, packmol_sidemax=1.0e3,
         List of molecules. 
 
         Each element of `molecules` is a dict with keys 'moltem', 'num',
-        'constraints'. `moltem` is an instance of `Configuration` or its
-        subclass. `num` is an integer specifying the number of molecules of this
-        type to be added. `offsets` is a tuple of five integers specifying the
-        offsets of atom types, bond types, angle types, dihedral types, and
-        improper types, repectively. `constaints` is a list of strings
-        specifying the constrains as required by packmol,
+        'offsets', and 'constraints'.
+
+        `moltem` is an instance of `Configuration` or its subclass.
+
+        `num` is an integer specifying the number of molecules of this type to
+        be added.
+       
+       `offsets` is a tuple of five integers specifying the offsets of atom
+        types, bond types, angle types, dihedral types, and improper types,
+        repectively.
+
+        `constaints` is a list of strings specifying the constrains as required
+        by packmol,
         e.g., `constraints = ['inside cube xmin ymin zmin d',
         'outside sphere a b c d', ...]`.
         An empty constaint list indicates inside the entire simulation box.
@@ -582,8 +590,9 @@ def add_molecules(config, molecules, packmol_tol=2.0, packmol_sidemax=1.0e3,
         zero.
 
     """
+    mids = [] #Ids of the added molecules
     na_ini = config.num_atoms #Number of atoms before adding molecules
-
+    
     for each in molecules:
         moltem = each['moltem']
         #Offsets for atom types, etc.
@@ -611,6 +620,10 @@ def add_molecules(config, molecules, packmol_tol=2.0, packmol_sidemax=1.0e3,
         if each['offsets'][4]==imp_toff:
             for i in range(1,moltem.num_improper_types+1):
                 config.add_improper_type(moltem.improper_coeffs[i])
+
+        mid_beg = config.num_molecules + 1
+        mid_end = mid_beg + each['num']
+        mids.append( range(mid_beg, mid_end) )
 
         #Add atoms, bonds, etc.
         for jmol in range(each['num']):
@@ -670,44 +683,73 @@ def add_molecules(config, molecules, packmol_tol=2.0, packmol_sidemax=1.0e3,
 
     #Update atom positions with packmol
     #Write out packmol file
-    if packmol_path is None:
-        return
-    fn_pm_in = Path('inp_pm.txt') #Packmol input file
-    fn_pm_out = Path('out_pm.xyz')
-    fns_xyz = []
-    with open(fn_pm_in, 'w') as fh:
-        fh.write('tolerance %g\n'%packmol_tol)
-        fh.write('sidemax %g\n'%packmol_sidemax)
-        fh.write('seed -1\n')
-        fh.write('randominitialpoint\n')
-        fh.write('movebadrandom yes\n')
-        fh.write('output %s\n'%fn_pm_out)
-        fh.write('filetype xyz\n')
-        fh.write('\n')
-        for each in molecules:
-            if each['num'] < 1:
-                continue
-            moltem = each['moltem']
-            fn_xyz = Path('_tmp_'+ moltem.name + '.xyz')
-            fns_xyz.append(fn_xyz)
-            write_xyz(moltem, fn_xyz)
-            fh.write('structure %s\n'%fn_xyz)
-            fh.write('  number %d\n'%each['num'])
-            for constraint in each['constraints']:
-                fh.write('  %s\n'%constraint)
-            fh.write('end structure\n')
-    
-    #Run packmol
-    args_run = ["%s < %s"%(packmol_path, fn_pm_in)]
-    subprocess.run(args_run, shell=True)
-    #Read back the packmol output
-    read_xyz(config, fn_pm_out, offset=na_ini)
+    if packmol_path is not None:
+        fn_pm_in = Path('inp_pm.txt') #Packmol input file
+        fn_pm_out = Path('out_pm.xyz')
+        fns_xyz = []
+        with open(fn_pm_in, 'w') as fh:
+            fh.write('tolerance %g\n'%packmol_tol)
+            fh.write('sidemax %g\n'%packmol_sidemax)
+            fh.write('seed -1\n')
+            fh.write('randominitialpoint\n')
+            fh.write('movebadrandom yes\n')
+            fh.write('output %s\n'%fn_pm_out)
+            fh.write('filetype xyz\n')
+            fh.write('\n')
+            for each in molecules:
+                if each['num'] < 1:
+                    continue
+                moltem = each['moltem']
+                fn_xyz = Path('_tmp_'+ moltem.name + '.xyz')
+                fns_xyz.append(fn_xyz)
+                write_xyz(moltem, fn_xyz)
+                fh.write('structure %s\n'%fn_xyz)
+                fh.write('  number %d\n'%each['num'])
+                for constraint in each['constraints']:
+                    fh.write('  %s\n'%constraint)
+                fh.write('end structure\n')
+        
+        #Run packmol
+        args_run = ["%s < %s"%(packmol_path, fn_pm_in)]
+        subprocess.run(args_run, shell=True)
+        #Read back the packmol output
+        read_xyz(config, fn_pm_out, offset=na_ini)
 
-    fn_pm_in.unlink(missing_ok=True)
-    fn_pm_out.unlink(missing_ok=True)
-    Path(str(fn_pm_out)+'_FORCED').unlink(missing_ok=True)
-    for each in fns_xyz:
-        each.unlink(missing_ok=True)
+        fn_pm_in.unlink(missing_ok=True)
+        fn_pm_out.unlink(missing_ok=True)
+        Path(str(fn_pm_out)+'_FORCED').unlink(missing_ok=True)
+        for each in fns_xyz:
+            each.unlink(missing_ok=True)
+    return mids
+
+
+def write_grp_lammps(config, fn, gname, lmp_gid):
+    """
+    Write atoms ids of a group for including in a Lammps script.
+
+    """
+    with open(fn, 'w') as fh:
+        buf = f"group {lmp_gid} id "
+        v = config.groups[gname]['atoms']
+        if isinstance(v, range):
+            buf += f" {v[0]}:{v[-1]}:{v.step}"
+        else:
+            buf += f" {' '.join([str(x) for x in v])}"
+        fbuf = pprint.pformat(buf, width=80, compact=True)
+        lines = fbuf[1:-1].splitlines()
+        nlines = len(lines)
+        #Write first line
+        if nlines == 1:
+            fh.write(lines[0].strip(" '") + '\n')
+        else:
+            fh.write(lines[0].strip(" '") + ' &\n')
+        #Lines following the first are indented
+        if nlines > 2:
+            for each in lines[1:-1]:
+                fh.write('  ' + each.strip(" '") + ' &\n')
+        #Write last line
+        if nlines > 1:
+            fh.write('  ' + lines[-1].strip(" '") + '\n')
 
 
 def write_mol_grp(config, fn, title=''):
@@ -719,16 +761,28 @@ def write_mol_grp(config, fn, title=''):
         fh.write('%s\n'%title)
         fh.write('GROUPS %d\n'%config.num_groups)
         for key,val in config.groups.items():
-            fh.write(f"{key}")
+            buf = f"{key}"
             for k, v in val.items():
-                fh.write(f" {k}")
+                buf += f" {k}"
                 if isinstance(v, range):
-                    #fh.write(f" range {v[0]} {v[-1]} {v.step}")
-                    fh.write(f" {v[0]}:{v[-1]}:{v.step}")
+                    buf += f" {v[0]}:{v[-1]}:{v.step}"
                 else:
-                    #fh.write(f" list {len(v)} {' '.join(str(x) for x in v)}")
-                    fh.write(f" {len(v)} {' '.join(str(x) for x in v)}")
-            fh.write('\n')
+                    buf += f" {len(v)} {' '.join([str(x) for x in v])}"
+            fbuf = pprint.pformat(buf, width=80, compact=True)
+            lines = fbuf[1:-1].splitlines()
+            nlines = len(lines)
+            #Write first line
+            if nlines == 1:
+                fh.write(lines[0].strip(" '") + '\n')
+            else:
+                fh.write(lines[0].strip(" '") + ' &\n')
+            #Lines following the first are indented
+            if nlines > 2:
+                for each in lines[1:-1]:
+                    fh.write('  ' + each.strip(" '") + ' &\n')
+            #Write last line
+            if nlines > 1:
+                fh.write('  ' + lines[-1].strip(" '") + '\n')
         fh.write('\n')
         fh.write('MOLECULES %d\n'%config.num_molecules)
         for key,val in config.molecules.items():
@@ -745,7 +799,12 @@ def read_mol_grp(config, fn):
         fh.readline() #Skip title line
         num_groups = int( fh.readline().strip(' \n').split()[1] )
         for i in range(num_groups):
-            words = fh.readline().strip(' \n').split()
+            line = fh.readline().strip(' \n')
+            words = line.rstrip('&').split()
+            while line.endswith('&'):
+                line = fh.readline().strip(' \n')
+                words += line.rstrip('&').split()
+
             num_words = len(words)
             gname = words[0]
             atom_types=None; atoms=None; molecules=None

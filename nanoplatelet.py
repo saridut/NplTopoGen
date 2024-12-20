@@ -27,9 +27,6 @@ class NanoPlatelet(Configuration):
         """
         super().__init__()
         self.is_slab = is_slab
-        self.xtal = None
-        self.num_mono_layers = 0
-        self._bbox_xtal = None
 
         
 
@@ -51,6 +48,7 @@ class NanoPlatelet(Configuration):
             Number of monolayers.
         phi : float
             Angle between the lengthwise edge and (110) direction in degrees.
+            This is nelected if `self.is_slab` is true.
         balanced : bool
             Whether there are same number of monolayers for both atomic species
             in the crystal.
@@ -70,16 +68,21 @@ class NanoPlatelet(Configuration):
             Parameters for pair interactions 
 
         """
-        print('Building crystal ...')
-
-        self.xtal = xtal
-        self.num_mono_layers = num_mono_layers
-        #Atom types
-        num_atom_types_xtal = self.xtal.get_num_atom_types()
-        for i in range(1, num_atom_types_xtal+1):
-            name = self.xtal.get_atom_name(i)
-            mass = self.xtal.get_atom_mass(i)
+        #Xtal atom types
+        at_beg = self.num_atom_types + 1 
+        at_end = at_beg + xtal.get_num_atom_types() - 1
+        for i in range(at_beg, at_end+1):
+            name = xtal.get_atom_name(i)
+            mass = xtal.get_atom_mass(i)
             self.add_atom_type(mass, name)
+
+        #Set pair coeffs
+        for i, val in enumerate(pair_coeffs):
+            self.set_pair_coeff(at_beg+i, val)
+
+        #Xtal atom ids
+        aid_beg = self.num_atoms + 1 # First xtal atom id
+        aid_end = aid_beg
         
         #Repeat unit spanning the x-y plane
         ru_coords = []; ru_at = [] #Type of all atoms per unit cell
@@ -88,48 +91,45 @@ class NanoPlatelet(Configuration):
         else:
             imax = 2*num_mono_layers + 1
         for i in range(1, imax+1):
-            pos, typ = self.xtal.get_atoms_in_layer(i)
+            pos, typ = xtal.get_atoms_in_layer(i)
             ru_coords.extend(pos); ru_at.extend(typ)
         ru_coords = np.asarray(ru_coords)
         ru_at = np.asarray(ru_at)
 
-        num_atoms_xtal = 0
+        na = 0
         if pbc_xy:
             if unit == 'ang':
-                nx = math.floor(length/self.xtal.a)
-                ny = math.floor(width/self.xtal.b)
+                nx = math.floor(length/xtal.a)
+                ny = math.floor(width/xtal.b)
             elif unit == 'lattice':
                 nx = int(length); ny = int(width)
 
             for j in range(ny):
                 for i in range(nx):
-                    origin = np.array([i*self.xtal.a, j*self.xtal.b, 0])
+                    origin = np.array([i*xtal.a, j*xtal.b, 0])
                     for pos, at in zip(ru_coords, ru_at):
                         self.add_atom(at, charges[at-1], pos+origin)
-                        num_atoms_xtal += 1
-
+                        na += 1
             #Wrap in a simulation box and center at the origin
             self.fit_simbox()
             self.simbox[:,0] = 0.0
-            self.simbox[0,1] = nx*self.xtal.a
-            self.simbox[1,1] = ny*self.xtal.b
+            self.simbox[0,1] = nx*xtal.a
+            self.simbox[1,1] = ny*xtal.b
             if pbc_z:
-                self.simbox[2,1] = (num_mono_layers//2)*self.xtal.c
+                self.simbox[2,1] = (num_mono_layers//2)*xtal.c
             r = self.simbox.sum(axis=1)/2
             self.translate(-r)
-            #r = self.get_barycenter()
-            #self.translate(-r, only_atoms=True)
         else:
             if unit == 'ang':
                 hlen = length/2; hwid = width/2
             elif unit == 'lattice':
-                hlen = self.xtal.a*length/2
-                hwid = self.xtal.b*width/2
+                hlen = xtal.a*length/2
+                hwid = xtal.b*width/2
         
             #Bounding box centered at the origin
             hlen_bbox = math.hypot(hlen, hwid) #Half length of the bounding box
             #Number of unit cells along x, y, and z directions
-            nx = math.ceil(hlen_bbox/self.xtal.a) + 2 #add two additonal unit cells,
+            nx = math.ceil(hlen_bbox/xtal.a) + 2 #add two additonal unit cells,
                                                       #just in case
             ny = nx
             nc = (2*nx)*(2*ny) #Total number of unit cells
@@ -139,11 +139,11 @@ class NanoPlatelet(Configuration):
             coords = np.zeros((na_all,3), dtype=np.float64)
             atm_types = np.zeros((na_all,), dtype=np.int32)
             icoord = 0
-            blc = np.array([-nx*self.xtal.a, -ny*self.xtal.b, 0]) #Bottom left corner
+            blc = np.array([-nx*xtal.a, -ny*xtal.b, 0]) #Bottom left corner
             for j in range(2*ny):
                 for i in range(2*nx):
                     ibeg = icoord; iend = icoord + na_ru
-                    origin = blc + np.array([i*self.xtal.a, j*self.xtal.b, 0])
+                    origin = blc + np.array([i*xtal.a, j*xtal.b, 0])
                     coords[ibeg:iend,:] = np.tile(origin,(na_ru,1)) + ru_coords
                     atm_types[ibeg:iend,] = ru_at
                     icoord += na_ru
@@ -159,32 +159,38 @@ class NanoPlatelet(Configuration):
                     at = atm_types[iatm]
                     chge = charges[at-1]
                     self.add_atom(at, chge, pos)
-                    num_atoms_xtal += 1
-
+                    na += 1
             #Wrap in a simulation box and center at the origin
             self.fit_simbox(sep=0)
             if pbc_z:
                 self.simbox[2,1] = self.simbox[2,0] \
-                        + (num_mono_layers//2)*self.xtal.c
+                        + (num_mono_layers//2)*xtal.c
             r = self.simbox.sum(axis=1)/2
             self.translate(-r)
 
-        #Set pair coeffs
-        for i in range(1, num_atom_types_xtal+1):
-            self.set_pair_coeff(i, pair_coeffs[i-1])
+        aid_end += (na - 1) #Id of the last xtal atom
 
-        self._bbox_xtal = self.simbox.copy()
-        #Create new group of crystal atoms
-        self.set_group('xtal', atoms=range(1, num_atoms_xtal+1),
-            atom_types=range(1, num_atom_types_xtal+1))
+        #Atoms ids of the top & bottom crystal surface. Atoms on each surface
+        #are of the same type.
+        xtal_coords = self.get_atom_coords(list(range(aid_beg, aid_end+1)))
+        zcoords = xtal_coords[:,2]
+        zlo = zcoords.min(); zhi = zcoords.max()
 
-        print(f"NPL crystal bounding box ="
-              f" ({' '.join('%g'%v for v in self._bbox_xtal[:,0])})"
-              f" ({' '.join('%g'%v for v in self._bbox_xtal[:,1])})"
-              )
-        print("Number of NPL crystal atom types = %d"%num_atom_types_xtal)
-        print("Number of NPL crystal atoms = %d"%num_atoms_xtal)
-        print("Charge of the NPL crystal = %g"%self.get_total_charge())
+        top_mask = np.isclose(zcoords, zhi)
+        aids_xst = (aid_beg + np.nonzero(top_mask)[0]).tolist()
+        at_xst = self.atoms[aids_xst[0]]['type']
+
+        bot_mask = np.isclose(zcoords, zlo)
+        aids_xsb = (aid_beg + np.nonzero(bot_mask)[0]).tolist()
+        at_xsb = self.atoms[aids_xsb[0]]['type']
+
+        #Add groups
+        self.set_group('Xtal', atoms=range(aid_beg, aid_end+1),
+                atom_types=range(at_beg, at_end+1))
+        self.set_group('XtalSurfTop', atom_types=range(at_xst, at_xst+1),
+                        atoms=aids_xst)
+        self.set_group('XtalSurfBot', atom_types=range(at_xsb, at_xsb+1),
+                        atoms=aids_xsb)
 
 
 
@@ -222,18 +228,20 @@ class NanoPlatelet(Configuration):
 
         """
         totchge = self.get_total_charge()
-        
-        print('Adding ligands ...')
 
+        lig_size_max = 0
         num_ligand_types = len(ligand_list)
         lig_charge = np.zeros((num_ligand_types,))
         lig_pop = np.zeros((num_ligand_types,), dtype=np.int32)
+        lig_pop_top = np.zeros((num_ligand_types,), dtype=np.int32)
+        lig_pop_bot = np.zeros((num_ligand_types,), dtype=np.int32)
 
         aid_beg = self.num_atoms + 1 # First ligand atom id
         aid_end = aid_beg  # Last ligand atom id
         mid_beg = self.num_molecules + 1 #First ligand molecule id
         mid_end = mid_beg  # Last ligand molecule id
-        lig_size_max = 0
+        aids_lt = []; aids_lb = []; aidsc = aid_beg #Lists & counter
+        mids_lt = []; mids_lb = []; midsc = mid_beg #Lists & counter
 
         for i in range(num_ligand_types):
             each = ligand_list[i]
@@ -262,13 +270,45 @@ class NanoPlatelet(Configuration):
                           'continue, any other key to exit: '%ligand_list[i].name)
                 if s != "Y":
                     raise SystemExit("Exiting ...")
-            lig_pop[i] = int(np.rint(pop))
-            aid_end += ( lig_pop[i]*ligand_list[i].num_atoms - 1 )
-            mid_end += (lig_pop[i] - 1)
-            print('  Number of %s ligand molecules = %g'%(
-                    ligand_list[i].name, lig_pop[i]))
-        print('  Total number of ligand molecules = %d'%sum(lig_pop)) 
-        print('  Total number of ligand atoms = %d'%(aid_end-aid_beg+1))
+            if self.is_slab:
+                lig_pop_top[i] = int(np.rint(pop))//2
+                v = list(range(lig_pop_top[i]*ligand_list[i].num_atoms))
+                aids = [aidsc+i for i in v]
+                aids_lt.extend(aids)
+                aidsc += len(v)
+
+                v = list(range(lig_pop_top[i]))
+                mids = [midsc+i for i in v]
+                mids_lt.extend(mids)
+                midsc += len(v)
+
+                lig_pop_bot[i] = pop - lig_pop_top[i]
+                v = list(range(lig_pop_bot[i]*ligand_list[i].num_atoms))
+                aids = [aidsc+i for i in v]
+                aids_lb.extend(aids)
+                aidsc += len(v)
+
+                v = list(range(lig_pop_bot[i]))
+                mids = [midsc+i for i in v]
+                mids_lb.extend(mids)
+                midsc += len(v)
+                print(f"  Number of {ligand_list[i].name} molecules"
+                      f" = {lig_pop_top[i]+lig_pop_bot[i]}")
+            else:
+                lig_pop[i] = int(np.rint(pop))
+                aid_end += ( lig_pop[i]*ligand_list[i].num_atoms - 1 )
+                mid_end += (lig_pop[i] - 1)
+                print(f"  Number of {ligand_list[i].name} molecules"
+                      f" = {lig_pop[i]}")
+        if self.is_slab:
+            print(f"  Total number of ligand molecules"
+                  f" = {len(mids_lt)+len(mids_lb)}") 
+            print(f"  Total number of ligand atoms"
+                  f" = {len(aids_lt)+len(aids_lb)}")
+            #raise SystemExit()
+        else:
+            print(f"  Total number of ligand molecules = {sum(lig_pop)}") 
+            print(f"  Total number of ligand atoms = {aid_end-aid_beg+1}")
 
         #Offsets in types for ligands
         num_types = np.array([self.num_atom_types, self.num_bond_types,
@@ -285,80 +325,93 @@ class NanoPlatelet(Configuration):
             num_types += new_types
             at_end += (each.num_atom_types - 1)
 
+        #Xtal bounding box
+        rlo, rhi = self.get_bbox(self.groups['Xtal']['atoms'])
+        bbox_xtal = np.asarray((rlo,rhi)).transpose()
+
         delta = 1.0 #Small gap between periodic images (See Packmol manual)
         if self.is_slab:
-            lig_pop_above = lig_pop//2
-            lig_pop_below = lig_pop - lig_pop_above
-
             #Enlarge the current simbox (along z)
-            self.simbox[2,0] = self._bbox_xtal[2,0] - offset - thickness_
-            self.simbox[2,1] = self._bbox_xtal[2,1] + offset + thickness_
+            self.simbox[2,0] = bbox_xtal[2,0] - offset - thickness_
+            self.simbox[2,1] = bbox_xtal[2,1] + offset + thickness_
 
             #Bounding box above the crystal
-            bbox_above_lo = [self._bbox_xtal[0,0] + delta, 
-                             self._bbox_xtal[1,0] + delta,
-                             self._bbox_xtal[2,1] + delta + offset]
+            bbox_top_lo = [bbox_xtal[0,0] + delta, 
+                           bbox_xtal[1,0] + delta,
+                           bbox_xtal[2,1] + delta + offset]
 
-            bbox_above_hi = [self._bbox_xtal[0,1] - delta, 
-                             self._bbox_xtal[1,1] - delta,
-                             self._bbox_xtal[2,1] + offset + thickness_]
+            bbox_top_hi = [bbox_xtal[0,1] - delta, 
+                           bbox_xtal[1,1] - delta,
+                           bbox_xtal[2,1] + offset + thickness_]
             #Bbox for ligand binding group
-            bbox_above_ba = bbox_above_lo + bbox_above_hi
-            bbox_above_ba[5] = bbox_above_lo[2] + thickness_bm
+            bbox_top_ba = bbox_top_lo + bbox_top_hi
+            bbox_top_ba[5] = bbox_top_lo[2] + thickness_bm
 
             #Bounding box below the crystal
-            bbox_below_lo = [self._bbox_xtal[0,0] + delta, 
-                             self._bbox_xtal[1,0] + delta,
-                             self._bbox_xtal[2,0] - offset - thickness_]
+            bbox_bot_lo = [bbox_xtal[0,0] + delta, 
+                           bbox_xtal[1,0] + delta,
+                           bbox_xtal[2,0] - offset - thickness_]
 
-            bbox_below_hi = [self._bbox_xtal[0,1] - delta, 
-                             self._bbox_xtal[1,1] - delta,
-                             self._bbox_xtal[2,0] - delta - offset]
+            bbox_bot_hi = [bbox_xtal[0,1] - delta, 
+                           bbox_xtal[1,1] - delta,
+                           bbox_xtal[2,0] - delta - offset]
             #Bbox for ligand binding group
-            bbox_below_ba = bbox_below_lo + bbox_below_hi
-            bbox_below_ba[2] = bbox_below_hi[2] - thickness_bm
+            bbox_bot_ba = bbox_bot_lo + bbox_bot_hi
+            bbox_bot_ba[2] = bbox_bot_hi[2] - thickness_bm
 
             #Add ligands
             ligands_to_add = []
             for i in range(num_ligand_types):
-                g_above = 'inside box '
-                g_above += ' '.join([str(x) for x in bbox_above_lo])
-                g_above += ' '
-                g_above += ' '.join([str(x) for x in bbox_above_hi])
-                g_above += '\n  atoms ' + \
+                g_top = 'inside box '
+                g_top += ' '.join([str(x) for x in bbox_top_lo])
+                g_top += ' '
+                g_top += ' '.join([str(x) for x in bbox_top_hi])
+                g_top += '\n  atoms ' + \
                         ' '.join([str(x) for x in ligand_list[i].bind_group])
-                g_above += '\n    inside box ' + \
-                        ' '.join([str(x) for x in bbox_above_ba])
-                g_above += '\n  end atoms'
-                elem = {'moltem': ligand_list[i], 'num': lig_pop_above[i],
-                        'offsets': type_offsets[i], 'constraints': [g_above]}
+                g_top += '\n    inside box ' + \
+                        ' '.join([str(x) for x in bbox_top_ba])
+                g_top += '\n  end atoms'
+                elem = {'moltem': ligand_list[i], 'num': lig_pop_top[i],
+                        'offsets': type_offsets[i], 'constraints': [g_top]}
                 ligands_to_add.append(elem)
 
-                g_below = 'inside box '
-                g_below += ' '.join([str(x) for x in bbox_below_lo])
-                g_below += ' '
-                g_below += ' '.join([str(x) for x in bbox_below_hi])
-                g_below += '\n  atoms ' + \
+                g_bot = 'inside box '
+                g_bot += ' '.join([str(x) for x in bbox_bot_lo])
+                g_bot += ' '
+                g_bot += ' '.join([str(x) for x in bbox_bot_hi])
+                g_bot += '\n  atoms ' + \
                         ' '.join([str(x) for x in ligand_list[i].bind_group])
-                g_below += '\n    inside box ' + \
-                        ' '.join([str(x) for x in bbox_below_ba])
-                g_below += '\n  end atoms'
-                elem = {'moltem': ligand_list[i], 'num': lig_pop_below[i],
-                        'offsets': type_offsets[i], 'constraints': [g_below]}
+                g_bot += '\n    inside box ' + \
+                        ' '.join([str(x) for x in bbox_bot_ba])
+                g_bot += '\n  end atoms'
+                elem = {'moltem': ligand_list[i], 'num': lig_pop_bot[i],
+                        'offsets': type_offsets[i], 'constraints': [g_bot]}
                 ligands_to_add.append(elem)
+
+            #Create ligand group
+            atoms = range(aid_beg, aidsc)
+            atom_types = range(at_beg, at_end+1)
+            molecules = range(mid_beg, midsc)
+
+            self.set_group('LigandsTop', atoms=aids_lt, atom_types=atom_types,
+                       molecules=mids_lt)
+            self.set_group('LigandsBot', atoms=aids_lb, atom_types=atom_types,
+                       molecules=mids_lb)
+            self.set_group('Ligands', atoms=atoms, atom_types=atom_types,
+                           molecules=molecules)
         else:
             #Enlarge the current simbox
-            self.simbox[:,0] = self._bbox_xtal[:,0] - offset - thickness_
-            self.simbox[:,1] = self._bbox_xtal[:,1] + offset + thickness_
+            self.simbox[:,0] = bbox_xtal[:,0] - offset - thickness_
+            self.simbox[:,1] = bbox_xtal[:,1] + offset + thickness_
 
             #Inner bounding box: xtal bounding box slightly increased by delta
-            bbox_in_lo = self._bbox_xtal[:,0] - offset - delta
-            bbox_in_hi = self._bbox_xtal[:,1] + offset + delta
+            bbox_in_lo = bbox_xtal[:,0] - offset - delta
+            bbox_in_hi = bbox_xtal[:,1] + offset + delta
             bbox_in_bm = bbox_in_lo.tolist() + bbox_in_hi.tolist()
 
             #Outer bounding box: simbox box slightly reduced by delta
-            bbox_out_lo = self._bbox_xtal[:,0] - offset - thickness_
-            bbox_out_hi = self._bbox_xtal[:,1] + offset + thickness_
+            bbox_out_lo = bbox_xtal[:,0] - offset - thickness_
+            bbox_out_hi = bbox_xtal[:,1] + offset + thickness_
             bbox_out_bm = (bbox_in_lo - thickness_bm).tolist() + \
                             (bbox_in_hi + thickness_bm).tolist() 
             
@@ -386,16 +439,17 @@ class NanoPlatelet(Configuration):
                         'constraints': [g_in, g_out, g_bm]}
                 ligands_to_add.append(elem)
 
+            #Create ligand group
+            atoms = range(aid_beg, aid_end+1)
+            atom_types = range(at_beg, at_end+1)
+            molecules = range(mid_beg, mid_end+1)
+            self.set_group('Ligands', atoms=atoms, atom_types=atom_types,
+                           molecules=molecules)
+
         add_molecules(self, ligands_to_add, packmol_tol, packmol_sidemax,
                       packmol_path)
         print("Total charge after adding ligands = %g"%self.get_total_charge())
 
-        #Create new group of ligand atoms
-        atoms = range(aid_beg, aid_end+1)
-        atom_types = range(at_beg, at_end+1)
-        molecules = range(mid_beg, mid_end+1)
-        self.set_group('ligands', atoms=atoms, atom_types=atom_types,
-                       molecules=molecules)
 
 
 
@@ -482,6 +536,10 @@ class NanoPlatelet(Configuration):
             num_types += new_types
             at_end += (each.num_atom_types - 1)
 
+        #Xtal bounding box
+        rlo, rhi = self.get_bbox(self.groups['Xtal']['atoms'])
+        bbox_xtal = np.asarray((rlo,rhi)).reshape((3,2))
+
         delta = 1.0 #Small gap between periodic images (See Packmol manual)
         if self.is_slab:
             volume_above = (self.simbox[0,1]-self.simbox[0,0]) \
@@ -525,21 +583,21 @@ class NanoPlatelet(Configuration):
 
             
             #Bounding box above the crystal
-            bbox_above_lo = [self._bbox_xtal[0,0] + delta, 
-                             self._bbox_xtal[1,0] + delta,
-                             self._bbox_xtal[2,1] + delta + dist]
+            bbox_above_lo = [bbox_xtal[0,0] + delta, 
+                             bbox_xtal[1,0] + delta,
+                             bbox_xtal[2,1] + delta + dist]
 
-            bbox_above_hi = [self._bbox_xtal[0,1] - delta, 
-                             self._bbox_xtal[1,1] - delta,
+            bbox_above_hi = [bbox_xtal[0,1] - delta, 
+                             bbox_xtal[1,1] - delta,
                              self.simbox[2,1] - delta]
             #Bounding box below the crystal
-            bbox_below_lo = [self._bbox_xtal[0,0] + delta, 
-                             self._bbox_xtal[1,0] + delta,
+            bbox_below_lo = [bbox_xtal[0,0] + delta, 
+                             bbox_xtal[1,0] + delta,
                              self.simbox[2,0] + delta]
 
-            bbox_below_hi = [self._bbox_xtal[0,1] - delta, 
-                             self._bbox_xtal[1,1] - delta,
-                             self._bbox_xtal[2,0] - delta - dist]
+            bbox_below_hi = [bbox_xtal[0,1] - delta, 
+                             bbox_xtal[1,1] - delta,
+                             bbox_xtal[2,0] - delta - dist]
 
             print(f"Packing solvents \n"
                   f" inside box ({' '.join('%g'%v for v in bbox_above_lo)})"
@@ -588,8 +646,8 @@ class NanoPlatelet(Configuration):
             print(f"Total number of solvent atoms = {aid_end-aid_beg+1}")
 
             #Inner bounding box: xtal bounding box slightly increased by delta
-            bbox_in_lo = self._bbox_xtal[:,0] - dist - delta
-            bbox_in_hi = self._bbox_xtal[:,1] + dist + delta
+            bbox_in_lo = bbox_xtal[:,0] - dist - delta
+            bbox_in_hi = bbox_xtal[:,1] + dist + delta
 
             #Outer bounding box: simbox box slightly reduced by delta
             bbox_out_lo = self.simbox[:,0] + delta
@@ -626,7 +684,7 @@ class NanoPlatelet(Configuration):
         atoms = range(aid_beg, aid_end+1)
         atom_types = range(at_beg, at_end+1)
         molecules = range(mid_beg, mid_end+1)
-        self.set_group('solvent', atoms=atoms, atom_types=atom_types,
+        self.set_group('Solvent', atoms=atoms, atom_types=atom_types,
                        molecules=molecules)
 
 
@@ -677,11 +735,11 @@ class NanoPlatelet(Configuration):
                         sigma_ij = (sigma_i+sigma_j)/2.0
                         fh.write(f"pair_coeff {i} {j} {eps_ij:g} {sigma_ij:g}\n")
         else:
-            if soften=='ligands' or soften=='solvent':
+            if soften=='Ligands' or soften=='Solvent':
                 soft_atom_types = self.groups[soften]['atom_types']
             if soften=='both':
-                soft_atom_types = list(self.groups['ligands']['atom_types']) \
-                                + list(self.groups['solvent']['atom_types'])
+                soft_atom_types = list(self.groups['Ligands']['atom_types']) \
+                                + list(self.groups['Solvent']['atom_types'])
             with open(fn, 'w') as fh:
                 #pair_style lj/cut/coul/long/soft 2 0.5 10.0 12.0
                 #pair_modify shift yes
@@ -779,29 +837,32 @@ class NanoPlatelet(Configuration):
             with open(fn_pc, 'r') as fh:
                 lines = fh.readlines()
             for each in lines:
-                words = each.strip(' \n').split()
+                #Remove comments and split
+                stripped = each.strip(' \n')
+                if stripped.startswith('#'):
+                    continue
+                else:
+                    non_comment = each.split("#",1)[0]
+                    if non_comment != '':
+                        words = non_comment.split()
+                    else:
+                        continue
                 at_i = int(words[1]); at_j = int(words[2])
                 if at_i == at_j:
                     params = [float(x) for x in words[3:]]
                     self.set_pair_coeff(at_i, params)
         #Xtal/ligand data
-        if 'xtal' in self.groups:
-            grp_xtal = self.groups['xtal']
+        if 'Xtal' in self.groups:
+            grp_xtal = self.groups['Xtal']
             self._num_atoms_xtal = len(grp_xtal['atoms'])
             self._num_atom_types_xtal = len(grp_xtal['atom_types'])
 
         self._bbox_xtal = np.array([[np.inf,np.NINF],[np.inf,np.NINF],
                                     [np.inf,np.NINF]])
-        for iatm in self.groups['xtal']['atoms']:
+        for iatm in self.groups['Xtal']['atoms']:
             coords = self.atoms[iatm]['coords']
             self._bbox_xtal[:,0] = np.minimum(self._bbox_xtal[:,0], coords)
             self._bbox_xtal[:,1] = np.maximum(self._bbox_xtal[:,1], coords)
-
-        #if 'ligands' in self.groups:
-        #    grp_lig = self.groups['ligands']
-        #    self._num_atoms_ligands = len(grp_lig['atoms'])
-        #    self._num_atom_types_ligands = len(grp_lig['atom_types'])
-        #    self._num_molecules_ligands = len(grp_lig['molecules'])
 
 
 

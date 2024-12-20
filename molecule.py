@@ -123,7 +123,7 @@ class Molecule(Configuration):
                 self.atoms[i+1]['coords'] = rotated_coords[i,:] + pivot
             self.fit_simbox()
         else:
-            out_coords = rotate_vector_axis_angle(coords, uhat, theta)
+            out_coords[:,:] = rotate_vector_axis_angle(coords, uhat, theta)
             for i in range(n):
                 out_coords[i,:] += pivot
 

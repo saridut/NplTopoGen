@@ -15,10 +15,10 @@ from _geom_utils import *
 
 config = Configuration()
 
-#dn ='ligands/carboxy_acid/GLC18_usat'
-#name = 'GLC18_usat_anion'
-dn ='solvents/methanol'
-name = 'slvnt_methanol'
+dn ='ligands/carboxy_acid/C4'
+name = 'C4'
+#dn ='solvents/methanol'
+#name = 'slvnt_methanol'
 
 fn_in = dn + '/' + name + '_lpg.lmp'
 fn_out = dn + '/' + name + '.lmp'

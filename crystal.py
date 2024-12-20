@@ -6,7 +6,7 @@ import numpy as np
 
 
 def _get_lattice_points_2d(lattice, normal_axis, normal_pos,
-                           lpar, lo, hi, boundary='pp'):
+                           lpar, lo, hi, boundary='pp', num_sites=0):
     """
     Generates points on a 2D lattice embedded in 3D space.
 
@@ -24,9 +24,9 @@ def _get_lattice_points_2d(lattice, normal_axis, normal_pos,
         Position of the lattice plane along the normal_axis
     lpar : scalar/list/tuple/ndarray of size (2,)
         Lattice parameter
-    lo : (2,) array_like
+    lo : (2,) array-like
         Lower bounds along two directions
-    hi : (2,) array_like
+    hi : (2,) array-like
         Upper bounds along two directions
     boundary : str
         Two characters specifying the nature of the boundary along the two
@@ -34,6 +34,8 @@ def _get_lattice_points_2d(lattice, normal_axis, normal_pos,
         boundary, 'n' denotes non-periodic boundary, and 'c' denotes an
         end-capped boundary. For 'p' & 'c', `lpar` will be modified if
         necessary.
+    num_sites : int
+        Minimum number of lattice points. If zero, this parameter is ignored.
 
     Returns
     -------
@@ -48,60 +50,69 @@ def _get_lattice_points_2d(lattice, normal_axis, normal_pos,
         lpar_ = np.array(lpar)
 
     taxes = [0,1,2]; taxes.remove(normal_axis)
-
     nuc = np.zeros((2,), dtype=np.int32) #Number of unit cells along each direction
-    for i in range(2):
-        l = hi[i] - lo[i]
-        if boundary[i]=='p':
-            nuc[i] = round(l/lpar_[i])
-            if nuc[i] < 1: nuc[i] = 1
-            lpar_[i] = l/nuc[i]
-        elif boundary[i]=='c':
-            nuc[i] = round(l/lpar_[i])
-            if nuc[i] < 1: nuc[i] = 1
-            lpar_[i] = l/nuc[i]
-            nuc[i] += 1
-        elif boundary[i]=='n':
-            nuc[i] = math.ceil(l/lpar_[i])
-        print(f"Lattice parameter along axis {taxes[i]} = {lpar_[i]}")
-
-    coords = []
-    origin = np.zeros((3,))
-    origin[normal_axis] = normal_pos
-    origin[taxes[0]] = lo[0]
-    origin[taxes[1]] = lo[1]
-    coord = np.zeros((3,))
-    a = lpar_[0]; b = lpar_[1]
-    for j in range(nuc[1]):
-        for i in range(nuc[0]):
-            if lattice == 'sc':
-                coord[taxes[0]] = i*a; coord[taxes[1]] = j*b
-                coords.append(origin+coord)
-            elif lattice == 'bcc':
-                coord[taxes[0]] = i*a;
-                coord[taxes[1]] = j*b
-                coords.append(origin+coord)
-
-                coord[taxes[0]] = (i+0.5)*a
-                coord[taxes[1]] = (j+0.5)*b
-                coords.append(origin+coord)
-
-    #Check if boundary conditions are satisfied
-    coords_final = []
-    for each in coords:
-        add = True
+    l = np.asarray(hi) - np.asarray(lo)
+    while True:
         for i in range(2):
-            if boundary[i] == 'c' and each[taxes[i]] > hi[i]:
-                add = False; break
-            if boundary[i] == 'n' and each[taxes[i]] >= hi[i]:
-                add = False; break
-        if add: 
-            coords_final.append(each)
+            if boundary[i]=='p':
+                nuc[i] = round(l[i]/lpar_[i])
+                if nuc[i] < 1: nuc[i] = 1
+                lpar_[i] = l[i]/nuc[i]
+            elif boundary[i]=='c':
+                nuc[i] = round(l[i]/lpar_[i])
+                if nuc[i] < 1: nuc[i] = 1
+                lpar_[i] = l[i]/nuc[i]
+                nuc[i] += 1
+            elif boundary[i]=='n':
+                nuc[i] = math.floor(1 + l[i]/lpar_[i])
+
+        coords = []
+        origin = np.zeros((3,))
+        origin[normal_axis] = normal_pos
+        origin[taxes[0]] = lo[0]; origin[taxes[1]] = lo[1]
+        coord = np.zeros((3,))
+        a = lpar_[0]; b = lpar_[1]
+        for j in range(nuc[1]):
+            for i in range(nuc[0]):
+                if lattice == 'sc':
+                    coord[taxes[0]] = i*a; coord[taxes[1]] = j*b
+                    coords.append(origin+coord)
+                elif lattice == 'bcc':
+                    coord[taxes[0]] = i*a;
+                    coord[taxes[1]] = j*b
+                    coords.append(origin+coord)
+
+                    coord[taxes[0]] = (i+0.5)*a
+                    coord[taxes[1]] = (j+0.5)*b
+                    coords.append(origin+coord)
+
+        #Check if boundary conditions are satisfied
+        coords_final = []
+        for each in coords:
+            add = True
+            for i in range(2):
+                if (boundary[i] in 'cn') and (each[taxes[i]] > hi[i]):
+                    add = False; break
+            if add: 
+                coords_final.append(each)
+
+        #Number of lattice points
+        ns = len(coords_final)
+        if ns >= num_sites:
+            break
+        else:
+            #Updated lattice parameters
+            m = np.argmax(l); p = [0, 1]; p.remove(m)
+            nuc[m] += 1
+            if l[m] == l[p[0]]: nuc[p[0]] += 1
+            lpar_[:] = (np.asarray(hi) - np.asarray(lo))/nuc
+
+    print(f"Lattice parameters = ({lpar_[0]}, {lpar_[1]})")
     return np.array(coords_final)
 
 
 
-def get_lattice_points(lattice, lpar, lo, hi, boundary='ppp'):
+def get_lattice_points(lattice, lpar, lo, hi, boundary='ppp', num_sites=0):
     """
     Generates points on a lattice.
 
@@ -111,9 +122,9 @@ def get_lattice_points(lattice, lpar, lo, hi, boundary='ppp'):
         {'sc', 'bcc', 'fcc'}
     lpar : scalar/list/tuple/ndarray of size (3,)
         Lattice parameter
-    lo : (3,) array_like
+    lo : (3,) array-like
         Lower bounds along x, y, & z directions
-    hi : (3,) array_like
+    hi : (3,) array-like
         Upper bounds along x, y, & z directions
     boundary : str
         Three characters specifying the nature of the boundary along the x, y,
@@ -121,6 +132,8 @@ def get_lattice_points(lattice, lpar, lo, hi, boundary='ppp'):
         boundary, 'n' denotes non-periodic boundary, and 'c' denotes an
         end-capped boundary. For 'p' & 'c', `lpar` will be modified if
         necessary.
+    num_sites : int
+        Minimum number of lattice points. If zero, this parameter is ignored.
 
     Returns
     -------
@@ -145,87 +158,99 @@ def get_lattice_points(lattice, lpar, lo, hi, boundary='ppp'):
         if np.isscalar(lpar):
             lpar_ = lpar
         else:
-            lpar_ = [ lpar[taxes[0]], lpar[taxes[1]] ]
-        lo_ = [ lo[taxes[0]], lo[taxes[1]] ]
-        hi_ = [ hi[taxes[0]], hi[taxes[1]] ]
+            lpar_ = np.asarray([ lpar[taxes[0]], lpar[taxes[1]] ])
+        lo_ = np.asarray([ lo[taxes[0]], lo[taxes[1]] ])
+        hi_ = np.asarray([ hi[taxes[0]], hi[taxes[1]] ])
         bndry = boundary[taxes[0]] + boundary[taxes[1]]
         coords = _get_lattice_points_2d(lattice, normal_axis, normal_pos,
-                                        lpar_, lo_, hi_, bndry)
+                                        lpar_, lo_, hi_, bndry, num_sites)
         return coords
 
     #Check boundary flags to see if the lattice parameter needs to be modified
     if np.isscalar(lpar):
         lpar_ = np.ones((3,))*lpar
     else:
-        lpar_ = np.array(lpar)
+        lpar_ = np.asarray(lpar)
     nuc = np.zeros((3,), dtype=np.int32) #Number of unit cells along each direction
-    for i in range(3):
-        l = hi[i] - lo[i]
-        if boundary[i]=='p':
-            nuc[i] = round(l/lpar_[i])
-            if nuc[i] < 1: nuc[i] = 1
-            lpar_[i] = l/nuc[i]
-        elif boundary[i]=='c':
-            nuc[i] = round(l/lpar_[i])
-            if nuc[i] < 1: nuc[i] = 1
-            lpar_[i] = l/nuc[i]
-            nuc[i] += 1
-        elif boundary[i]=='n':
-            nuc[i] = math.ceil(l/lpar_[i])
-        print(f"Lattice parameter along axis {i} = {lpar_[i]}")
-
-    coords = []
-    origin = np.array(lo)
-    coord = np.zeros((3,))
-    a = lpar_[0]; b = lpar_[1]; c = lpar_[2]
-    for k in range(nuc[2]):
-        for j in range(nuc[1]):
-            for i in range(nuc[0]):
-                if lattice == 'sc':
-                    coord[0] = i*a; coord[1] = j*b; coord[2] = k*c
-                    coords.append(origin+coord)
-                elif lattice == 'bcc':
-                    coord[0] = i*a;
-                    coord[1] = j*b
-                    coord[2] = k*c
-                    coords.append(origin+coord)
-
-                    coord[0] = (i+0.5)*a
-                    coord[1] = (j+0.5)*b
-                    coord[2] = (k+0.5)*c
-                    coords.append(origin+coord)
-                elif lattice == 'fcc':
-                    coord[0] = i*a;
-                    coord[1] = j*b
-                    coord[2] = k*c
-                    coords.append(origin+coord)
-
-                    coord[0] = (i+0.5)*a
-                    coord[1] = (j+0.5)*b
-                    coord[2] = k*c
-                    coords.append(origin+coord)
-
-                    coord[0] = (i+0.5)*a
-                    coord[1] = j*b
-                    coord[2] = (k+0.5)*c
-                    coords.append(origin+coord)
-
-                    coord[0] = i*a
-                    coord[1] = (j+0.5)*b
-                    coord[2] = (k+0.5)*c
-                    coords.append(origin+coord)
-
-    #Check if boundary conditions are satisfied
-    coords_final = []
-    for each in coords:
-        add = True
+    l = np.asarray(hi) - np.asarray(lo)
+    while True:
         for i in range(3):
-            if boundary[i] == 'c' and each[i] > hi[i]:
-                add = False; break
-            if boundary[i] == 'n' and each[i] >= hi[i]:
-                add = False; break
-        if add: 
-            coords_final.append(each)
+            if boundary[i]=='p':
+                nuc[i] = round(l[i]/lpar_[i])
+                if nuc[i] < 1: nuc[i] = 1
+                lpar_[i] = l[i]/nuc[i]
+            elif boundary[i]=='c':
+                nuc[i] = round(l[i]/lpar_[i])
+                if nuc[i] < 1: nuc[i] = 1
+                lpar_[i] = l[i]/nuc[i]
+                nuc[i] += 1
+            elif boundary[i]=='n':
+                nuc[i] = math.ceil(l[i]/lpar_[i])
+
+        coords = []
+        origin = np.array(lo)
+        coord = np.zeros((3,))
+        a = lpar_[0]; b = lpar_[1]; c = lpar_[2]
+        for k in range(nuc[2]):
+            for j in range(nuc[1]):
+                for i in range(nuc[0]):
+                    if lattice == 'sc':
+                        coord[0] = i*a; coord[1] = j*b; coord[2] = k*c
+                        coords.append(origin+coord)
+                    elif lattice == 'bcc':
+                        coord[0] = i*a;
+                        coord[1] = j*b
+                        coord[2] = k*c
+                        coords.append(origin+coord)
+
+                        coord[0] = (i+0.5)*a
+                        coord[1] = (j+0.5)*b
+                        coord[2] = (k+0.5)*c
+                        coords.append(origin+coord)
+                    elif lattice == 'fcc':
+                        coord[0] = i*a;
+                        coord[1] = j*b
+                        coord[2] = k*c
+                        coords.append(origin+coord)
+
+                        coord[0] = (i+0.5)*a
+                        coord[1] = (j+0.5)*b
+                        coord[2] = k*c
+                        coords.append(origin+coord)
+
+                        coord[0] = (i+0.5)*a
+                        coord[1] = j*b
+                        coord[2] = (k+0.5)*c
+                        coords.append(origin+coord)
+
+                        coord[0] = i*a
+                        coord[1] = (j+0.5)*b
+                        coord[2] = (k+0.5)*c
+                        coords.append(origin+coord)
+
+        #Check if boundary conditions are satisfied
+        coords_final = []
+        for each in coords:
+            add = True
+            for i in range(3):
+                if (boundary[i] in 'cn') and (each[i] > hi[i]):
+                    add = False; break
+            if add: 
+                coords_final.append(each)
+
+        #Number of lattice points
+        ns = len(coords_final)
+        if ns >= num_sites:
+            break
+        else:
+            #Updated lattice parameters
+            m = np.argmax(l); p = [0, 1, 2]; p.remove(m)
+            nuc[m] += 1
+            if l[m] == l[p[0]]: nuc[p[0]] += 1
+            if l[m] == l[p[1]]: nuc[p[1]] += 1
+            lpar_[:] = (np.asarray(hi) - np.asarray(lo))/nuc
+
+    print(f"Lattice parameters = ({lpar_[0]}, {lpar_[1]}, {lpar_[2]})")
     return np.array(coords_final)
 
 
@@ -418,3 +443,14 @@ CdS_zb = Crystal(5.89, fcoords=fcoords,
                               2: {'name': 'S', 'mass': 32.065}},
                   atom_order=[1, 1, 2, 2, 1, 1, 2, 2]
                   )
+
+if __name__ == '__main__':
+    lo = [0,0,0]; hi = [4,4,0]
+    lpar = 1.2; lattice = 'bcc'
+    coords = get_lattice_points(lattice, lpar, lo, hi, boundary='ppp', num_sites=30)
+    print(coords.shape[0])
+#   for i,each in enumerate(coords):
+#       print(i, each)
+
+
+
